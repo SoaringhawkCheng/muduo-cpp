@@ -17,16 +17,19 @@
 using namespace muduo;
 using namespace muduo::net;
 
-const int Channel::kNoneEvent = 0;//无事件
-const int Channel::kReadEvent = POLLIN | POLLPRI;//写事件
-const int Channel::kWriteEvent = POLLOUT;//读事件
+// Poll与EPoll中的事件相同，
+// POLLIN与EPOLLIN POLLPRI与EPOLLPRI POLLOUT与EPOLLOUT等价
+// 这里可以加上静态断言来确定
+const int Channel::kNoneEvent = 0; // 没有需要监听的事件
+const int Channel::kReadEvent = POLLIN | POLLPRI; // 读事件
+const int Channel::kWriteEvent = POLLOUT; // 写事件
 
 Channel::Channel(EventLoop* loop, int fd__)
   : loop_(loop),
     fd_(fd__),
     events_(0),
     revents_(0),
-    index_(-1),//默认初始化为-1，不在监听事件列表中
+    index_(-1),
     logHup_(true),
     tied_(false),
     eventHandling_(false),
@@ -34,6 +37,7 @@ Channel::Channel(EventLoop* loop, int fd__)
 {
 }
 
+// 析构时，必须确保loop中已经移除了该fd，或者epoll中已经删除了该fd
 Channel::~Channel()
 {
   assert(!eventHandling_);
@@ -50,12 +54,16 @@ void Channel::tie(const boost::shared_ptr<void>& obj)
   tied_ = true;
 }
 
+// 通过调用loop中函数，改变本fd在epoll中监听的事件
+// 在loop中又会去调用Poller中的函数，来更改epoll对fd监听的事件
 void Channel::update()
 {
   addedToLoop_ = true;
   loop_->updateChannel(this);
 }
 
+// 同上，通过EventLoop调用Epoller中函数，达到从epoll或者poll中删除fd的目的
+// 进行该操作时，必须确保该Channel已经不再监听任何事件
 void Channel::remove()
 {
   assert(isNoneEvent());
@@ -80,33 +88,34 @@ void Channel::handleEvent(Timestamp receiveTime)
   }
 }
 
+// 处理各种回调事件
 void Channel::handleEventWithGuard(Timestamp receiveTime)
 {
   eventHandling_ = true;
   LOG_TRACE << reventsToString();
-  if ((revents_ & POLLHUP) && !(revents_ & POLLIN))//发生挂断，且没有数据可读
+  if ((revents_ & POLLHUP) && !(revents_ & POLLIN))
   {
     if (logHup_)
     {
-      LOG_WARN << "fd = " << fd_ << " Channel::handle_event() POLLHUP";
+      LOG_WARN << "Channel::handle_event() POLLHUP";
     }
     if (closeCallback_) closeCallback_();
   }
 
-  if (revents_ & POLLNVAL)//文件描述符没有打开
+  if (revents_ & POLLNVAL) // fd值非法，可能是fd已经关闭
   {
-    LOG_WARN << "fd = " << fd_ << " Channel::handle_event() POLLNVAL";
+    LOG_WARN << "Channel::handle_event() POLLNVAL";
   }
 
-  if (revents_ & (POLLERR | POLLNVAL))//文件描述没有打开，或者有错误发生
+  if (revents_ & (POLLERR | POLLNVAL)) // 错误事件处理
   {
     if (errorCallback_) errorCallback_();
   }
-  if (revents_ & (POLLIN | POLLPRI | POLLRDHUP))//有数据(包括普通数据和优先数据)可读，或者有高优先级数据可读(比如带外数据)，或者TCP对端关闭或半关闭
+  if (revents_ & (POLLIN | POLLPRI | POLLRDHUP)) // 有数据可读
   {
     if (readCallback_) readCallback_(receiveTime);
   }
-  if (revents_ & POLLOUT)//有数据可写
+  if (revents_ & POLLOUT) // 该fd可写
   {
     if (writeCallback_) writeCallback_();
   }
@@ -115,31 +124,21 @@ void Channel::handleEventWithGuard(Timestamp receiveTime)
 
 string Channel::reventsToString() const
 {
-  return eventsToString(fd_, revents_);
-}
-
-string Channel::eventsToString() const
-{
-  return eventsToString(fd_, events_);
-}
-
-string Channel::eventsToString(int fd, int ev)
-{
   std::ostringstream oss;
-  oss << fd << ": ";
-  if (ev & POLLIN)
+  oss << fd_ << ": ";
+  if (revents_ & POLLIN)
     oss << "IN ";
-  if (ev & POLLPRI)
+  if (revents_ & POLLPRI)
     oss << "PRI ";
-  if (ev & POLLOUT)
+  if (revents_ & POLLOUT)
     oss << "OUT ";
-  if (ev & POLLHUP)
+  if (revents_ & POLLHUP)
     oss << "HUP ";
-  if (ev & POLLRDHUP)
+  if (revents_ & POLLRDHUP)
     oss << "RDHUP ";
-  if (ev & POLLERR)
+  if (revents_ & POLLERR)
     oss << "ERR ";
-  if (ev & POLLNVAL)
+  if (revents_ & POLLNVAL)
     oss << "NVAL ";
 
   return oss.str().c_str();

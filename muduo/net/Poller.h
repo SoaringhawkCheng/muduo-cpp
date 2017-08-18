@@ -29,7 +29,19 @@ class Channel;
 /// Base class for IO Multiplexing
 ///
 /// This class doesn't own the Channel objects.
-/// 虚基类，见PollPoller
+
+// Poller类是IO复用类的基类，有两个PollPoller和EpollPoller两个子类
+// 内部分别采用poll和epoll实现
+// 每个EventLoop内内部都持有一个Poller子类对象。
+// 但是无论是EventLoop和Poller均没有拥有Channel对象
+// 他们仅仅拥有Channel的指针数组
+
+// 更具体一些，Poller内部存在一个数组，保存所有监听Channel的指针。
+// 每次Poller进行poll调用，都会将EventLoop中的activeChannels_进行填充
+// 另外，Poller内部持有一个Map，实现从fd到对应Channel的映射
+// 这个主要用于底层poll或者epoll返回时，需要根据每个fd的revents填充对应的Channel回调事件
+// 并且在activeChannels_中进行填充
+
 class Poller : boost::noncopyable
 {
  public:
@@ -40,33 +52,38 @@ class Poller : boost::noncopyable
 
   /// Polls the I/O events.
   /// Must be called in the loop thread.
-  /// 轮询获取当前活动的io事件
-  /// 填充调用方传入的激活通道列表activeChannels
   virtual Timestamp poll(int timeoutMs, ChannelList* activeChannels) = 0;
 
   /// Changes the interested I/O events.
   /// Must be called in the loop thread.
+  // 更新fd的监听事件
   virtual void updateChannel(Channel* channel) = 0;
 
   /// Remove the channel, when it destructs.
   /// Must be called in the loop thread.
+  // 从epoll中移除fd，停止监听
   virtual void removeChannel(Channel* channel) = 0;
 
-  virtual bool hasChannel(Channel* channel) const;//通道映射表里有该通道
+  // 判断该epoll模型是否监听了Channel对应的fd
+  virtual bool hasChannel(Channel* channel) const;
 
+  // static方法，用于产生一个Poller子类对象
   static Poller* newDefaultPoller(EventLoop* loop);
 
+  // 断言没有跨线程
   void assertInLoopThread() const
   {
     ownerLoop_->assertInLoopThread();
   }
 
  protected:
-  typedef std::map<int, Channel*> ChannelMap;//通道映射表
-  ChannelMap channels_;//用于文件描述符与通道的映射
+  // 这是极为重要的一个数据结构，记录从fd到Channel的对应关系
+  // 底层的epoll每次监听完fd，都要根据这个映射关系去寻找对应的Channel
+  typedef std::map<int, Channel*> ChannelMap;
+  ChannelMap channels_; // 保存epoll监听的fd，对应的Channel指针
 
  private:
-  EventLoop* ownerLoop_;//轮询器是事件循环的间接成员，传入所属事件循环的指针
+  EventLoop* ownerLoop_; // 这个Poller对象所属的EventLoop
 };
 
 }

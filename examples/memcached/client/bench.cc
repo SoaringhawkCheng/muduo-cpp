@@ -69,7 +69,6 @@ class Client : boost::noncopyable
     else
     {
       conn_.reset();
-      client_.getLoop()->queueInLoop(boost::bind(&CountDownLatch::countDown, finished_));
     }
   }
 
@@ -122,6 +121,7 @@ class Client : boost::noncopyable
     if (acked_ == requests_)
     {
       conn_->shutdown();
+      finished_->countDown();
     }
   }
 
@@ -196,7 +196,7 @@ int main(int argc, char* argv[])
   LOG_WARN << "Connecting " << serverAddr.toIpPort();
 
   EventLoop loop;
-  EventLoopThreadPool pool(&loop, "bench-memcache");
+  EventLoopThreadPool pool(&loop);
 
   int valuelen = 100;
   Client::Operation op = set ? Client::kSet : Client::kGet;

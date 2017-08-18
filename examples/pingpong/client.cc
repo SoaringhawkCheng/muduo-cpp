@@ -87,7 +87,7 @@ class Client : boost::noncopyable
          int timeout,
          int threadCount)
     : loop_(loop),
-      threadPool_(loop, "pingpong-client"),
+      threadPool_(loop),
       sessionCount_(sessionCount),
       timeout_(timeout)
   {

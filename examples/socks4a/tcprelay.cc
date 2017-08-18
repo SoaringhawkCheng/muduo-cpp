@@ -17,7 +17,6 @@ void onServerConnection(const TcpConnectionPtr& conn)
   if (conn->connected())
   {
     conn->setTcpNoDelay(true);
-    conn->stopRead();
     TunnelPtr tunnel(new Tunnel(g_eventLoop, *g_serverAddr, conn));
     tunnel->setup();
     tunnel->connect();

@@ -1,7 +1,6 @@
 set(http_SRCS
   HttpServer.cc
   HttpResponse.cc
-  HttpContext.cc
   )
 
 add_library(muduo_http ${http_SRCS})

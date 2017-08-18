@@ -38,13 +38,11 @@ class EPollPoller : public Poller
  private:
   static const int kInitEventListSize = 16;
 
-  static const char* operationToString(int op);
-
   void fillActiveChannels(int numEvents,
                           ChannelList* activeChannels) const;
   void update(int operation, Channel* channel);
 
-  typedef std::vector<struct epoll_event> EventList;//epoll_event指定感兴趣的文件描述符上发生的可读，可写和异常等事件
+  typedef std::vector<struct epoll_event> EventList;
 
   int epollfd_;
   EventList events_;

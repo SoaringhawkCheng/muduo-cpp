@@ -310,17 +310,17 @@ index f5e6624..62fbd6f 100644
    if (revents_ & (POLLIN | POLLPRI | POLLRDHUP))
    {
      if (readCallback_) readCallback_(receiveTime);
-@@ -135,8 +138,10 @@ string Channel::eventsToString(int fd, int ev)
+@@ -125,8 +128,10 @@ string Channel::reventsToString() const
      oss << "OUT ";
-   if (ev & POLLHUP)
+   if (revents_ & POLLHUP)
      oss << "HUP ";
 +#ifdef POLLRDHUP
-   if (ev & POLLRDHUP)
+   if (revents_ & POLLRDHUP)
      oss << "RDHUP ";
 +#endif
-   if (ev & POLLERR)
+   if (revents_ & POLLERR)
      oss << "ERR ";
-   if (ev & POLLNVAL)
+   if (revents_ & POLLNVAL)
 diff --git a/muduo/net/Endian.h b/muduo/net/Endian.h
 index b277503..851e449 100644
 --- a/muduo/net/Endian.h
@@ -471,7 +471,7 @@ diff --git a/muduo/net/EventLoop.h b/muduo/net/EventLoop.h
 index 5741961..b03dd67 100644
 --- a/muduo/net/EventLoop.h
 +++ b/muduo/net/EventLoop.h
-@@ -156,7 +156,7 @@ class EventLoop : boost::noncopyable
+@@ -146,7 +146,7 @@ class EventLoop : boost::noncopyable
    Timestamp pollReturnTime_;
    boost::scoped_ptr<Poller> poller_;
    boost::scoped_ptr<TimerQueue> timerQueue_;
@@ -838,17 +838,3 @@ index f42f5a4..a6a3133 100644
    }
 +#endif
  }
-
-diff --git a/examples/protobuf/rpcbalancer/balancer_raw.cc b/examples/protobuf/rpcbalancer/balancer_raw.cc
-index 9c2e1db..c30b19d 100644
---- a/examples/protobuf/rpcbalancer/balancer_raw.cc
-+++ b/examples/protobuf/rpcbalancer/balancer_raw.cc
-@@ -12,7 +12,7 @@
- #include <boost/bind.hpp>
- #include <boost/ptr_container/ptr_vector.hpp>
-
--#include <endian.h>
-+#include <machine/endian.h>
- #include <stdio.h>
-
- using namespace muduo;

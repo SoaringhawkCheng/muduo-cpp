@@ -30,7 +30,6 @@ class PerformanceInspector : boost::noncopyable
   static string cmdline(HttpRequest::Method, const Inspector::ArgList&);
   static string memstats(HttpRequest::Method, const Inspector::ArgList&);
   static string memhistogram(HttpRequest::Method, const Inspector::ArgList&);
-  static string releaseFreeMemory(HttpRequest::Method, const Inspector::ArgList&);
 
   static string symbol(HttpRequest::Method, const Inspector::ArgList&);
 };

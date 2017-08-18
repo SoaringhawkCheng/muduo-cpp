@@ -25,7 +25,7 @@ class ThreadPool : boost::noncopyable
  public:
   typedef boost::function<void ()> Task;
 
-  explicit ThreadPool(const string& nameArg = string("ThreadPool"));
+  explicit ThreadPool(const string& name = string("ThreadPool"));
   ~ThreadPool();
 
   // Must be called before start().
@@ -35,11 +35,6 @@ class ThreadPool : boost::noncopyable
 
   void start(int numThreads);
   void stop();
-
-  const string& name() const
-  { return name_; }
-
-  size_t queueSize() const;
 
   // Could block if maxQueueSize > 0
   void run(const Task& f);
@@ -52,7 +47,7 @@ class ThreadPool : boost::noncopyable
   void runInThread();
   Task take();
 
-  mutable MutexLock mutex_;
+  MutexLock mutex_;
   Condition notEmpty_;
   Condition notFull_;
   string name_;

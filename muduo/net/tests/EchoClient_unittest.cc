@@ -89,8 +89,7 @@ int main(int argc, char* argv[])
   if (argc > 1)
   {
     EventLoop loop;
-    bool ipv6 = argc > 3;
-    InetAddress serverAddr(argv[1], 2000, ipv6);
+    InetAddress serverAddr(argv[1], 2000);
 
     int n = 1;
     if (argc > 2)

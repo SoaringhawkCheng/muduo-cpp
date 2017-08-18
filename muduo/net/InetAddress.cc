@@ -20,8 +20,10 @@
 
 // INADDR_ANY use (type)value casting.
 #pragma GCC diagnostic ignored "-Wold-style-cast"
-static const in_addr_t kInaddrAny = INADDR_ANY;//绑定地址0.0.0.0上的监听，能收到任意一块网卡的连接
-static const in_addr_t kInaddrLoopback = INADDR_LOOPBACK;//绑定地址LOOPBACK，即127.0.0.1上的连接，只能收到127.0.0.1上面的连接请求
+// INADDR_ANY表示可以绑定任何一块网卡
+static const in_addr_t kInaddrAny = INADDR_ANY;
+// INADDR_LOOPBACK表示本地环路测试
+static const in_addr_t kInaddrLoopback = INADDR_LOOPBACK;
 #pragma GCC diagnostic error "-Wold-style-cast"
 
 //     /* Structure describing an Internet socket address.  */
@@ -37,89 +39,52 @@ static const in_addr_t kInaddrLoopback = INADDR_LOOPBACK;//绑定地址LOOPBACK�
 //         in_addr_t       s_addr;     /* address in network byte order */
 //     };
 
-//     struct sockaddr_in6 {
-//         sa_family_t     sin6_family;   /* address family: AF_INET6 */
-//         uint16_t        sin6_port;     /* port in network byte order */
-//         uint32_t        sin6_flowinfo; /* IPv6 flow information */
-//         struct in6_addr sin6_addr;     /* IPv6 address */
-//         uint32_t        sin6_scope_id; /* IPv6 scope-id */
-//     };
-
 using namespace muduo;
 using namespace muduo::net;
 
-BOOST_STATIC_ASSERT(sizeof(InetAddress) == sizeof(struct sockaddr_in6));
-BOOST_STATIC_ASSERT(offsetof(sockaddr_in, sin_family) == 0);
-BOOST_STATIC_ASSERT(offsetof(sockaddr_in6, sin6_family) == 0);
-BOOST_STATIC_ASSERT(offsetof(sockaddr_in, sin_port) == 2);
-BOOST_STATIC_ASSERT(offsetof(sockaddr_in6, sin6_port) == 2);
+// 使用静态断言，保证addr和InetAddress的size相同，保证兼容性
+BOOST_STATIC_ASSERT(sizeof(InetAddress) == sizeof(struct sockaddr_in));
 
-#if !(__GNUC_PREREQ (4,6))
-#pragma GCC diagnostic ignored "-Winvalid-offsetof"
-#endif
-InetAddress::InetAddress(uint16_t port, bool loopbackOnly, bool ipv6)//lookbackonly，仅仅是环回地址?
+InetAddress::InetAddress(uint16_t port, bool loopbackOnly)
 {
-  BOOST_STATIC_ASSERT(offsetof(InetAddress, addr6_) == 0);
-  BOOST_STATIC_ASSERT(offsetof(InetAddress, addr_) == 0);
-  if (ipv6)
-  {
-    bzero(&addr6_, sizeof addr6_);
-    addr6_.sin6_family = AF_INET6;
-    in6_addr ip = loopbackOnly ? in6addr_loopback : in6addr_any;
-    addr6_.sin6_addr = ip;
-    addr6_.sin6_port = sockets::hostToNetwork16(port);
-  }
-  else
-  {
-    bzero(&addr_, sizeof addr_);
-    addr_.sin_family = AF_INET;
-    in_addr_t ip = loopbackOnly ? kInaddrLoopback : kInaddrAny;
-    addr_.sin_addr.s_addr = sockets::hostToNetwork32(ip);
-    addr_.sin_port = sockets::hostToNetwork16(port);
-  }
+  bzero(&addr_, sizeof addr_);
+  addr_.sin_family = AF_INET;
+  // 根据loopbackOnly决定是采用INADDR_ANY还是INADDR_LOOPBACK
+  in_addr_t ip = loopbackOnly ? kInaddrLoopback : kInaddrAny;
+  addr_.sin_addr.s_addr = sockets::hostToNetwork32(ip);
+  addr_.sin_port = sockets::hostToNetwork16(port);
 }
 
-InetAddress::InetAddress(StringArg ip, uint16_t port, bool ipv6)
+InetAddress::InetAddress(StringArg ip, uint16_t port)
 {
-  if (ipv6)
-  {
-    bzero(&addr6_, sizeof addr6_);
-    sockets::fromIpPort(ip.c_str(), port, &addr6_);
-  }
-  else
-  {
-    bzero(&addr_, sizeof addr_);
-    sockets::fromIpPort(ip.c_str(), port, &addr_);
-  }
+  bzero(&addr_, sizeof addr_);
+  sockets::fromIpPort(ip.c_str(), port, &addr_);
 }
 
 string InetAddress::toIpPort() const
 {
-  char buf[64] = "";
-  sockets::toIpPort(buf, sizeof buf, getSockAddr());
+  char buf[32];
+  sockets::toIpPort(buf, sizeof buf, addr_);
   return buf;
 }
 
 string InetAddress::toIp() const
 {
-  char buf[64] = "";
-  sockets::toIp(buf, sizeof buf, getSockAddr());
+  char buf[32];
+  sockets::toIp(buf, sizeof buf, addr_);
   return buf;
-}
-
-uint32_t InetAddress::ipNetEndian() const
-{
-  assert(family() == AF_INET);
-  return addr_.sin_addr.s_addr;
 }
 
 uint16_t InetAddress::toPort() const
 {
-  return sockets::networkToHost16(portNetEndian());
+  return sockets::networkToHost16(addr_.sin_port);
 }
 
+// __thread代表线程内全局变量，多个线程访问不会相互干扰，
+// 这是gcc提供的功能，它使得下面的resolve变成一个线程安全的函数
 static __thread char t_resolveBuffer[64 * 1024];
 
+// DNS解析，输入一个主机名，解析为ip地址，将结果保存在out中
 bool InetAddress::resolve(StringArg hostname, InetAddress* out)
 {
   assert(out != NULL);
@@ -127,8 +92,13 @@ bool InetAddress::resolve(StringArg hostname, InetAddress* out)
   struct hostent* he = NULL;
   int herrno = 0;
   bzero(&hent, sizeof(hent));
-   
-  //可重入的gethostbyname
+
+  // gethostbyname_r是一个可重入的、线程安全的函数，相比之下，gethostbyname使用的是
+  // static局部变量存储结果，使用看似简单，实际上丧失了可重入的能力
+  // struct hostent *gethostbyname(const char *name);
+  // 而gethostbyname_r采用外部传入存储空间，由用户自己保证存储空间的线程安全性即可
+  // 当然，如果将本函数用于信号处理函数handler中，导致同一函数对本函数调用两次或以上
+  // 仍然会导致结果错误
   int ret = gethostbyname_r(hostname.c_str(), &hent, t_resolveBuffer, sizeof t_resolveBuffer, &he, &herrno);
   if (ret == 0 && he != NULL)
   {

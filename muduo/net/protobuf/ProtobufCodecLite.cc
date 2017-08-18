@@ -27,7 +27,7 @@ namespace
     GOOGLE_PROTOBUF_VERIFY_VERSION;
     return 0;
   }
-  int __attribute__ ((unused)) dummy = ProtobufVersionCheck();
+  int dummy = ProtobufVersionCheck();
 }
 
 void ProtobufCodecLite::send(const TcpConnectionPtr& conn,

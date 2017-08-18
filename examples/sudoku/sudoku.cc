@@ -6,9 +6,6 @@
 
 using namespace muduo;
 
-// Dancing links algorithm by Donald E. Knuth
-// www-cs-faculty.stanford.edu/~uno/papers/dancing-color.ps.gz
-
 struct Node;
 typedef Node Column;
 struct Node
@@ -25,7 +22,6 @@ struct Node
 const int kMaxNodes = 1 + 81*4 + 9*9*9*4;
 // const int kMaxColumns = 400;
 const int kRow = 100, kCol = 200, kBox = 300;
-extern const char kNoSolution[] = "NoSolution";
 
 class SudokuSolver
 {
@@ -264,7 +260,7 @@ string solveSudoku(const StringPiece& puzzle)
 {
   assert(puzzle.size() == kCells);
 
-  string result = kNoSolution;
+  string result = "NoSolution";
 
   int board[kCells] = { 0 };
   bool valid = true;

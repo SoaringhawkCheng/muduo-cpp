@@ -55,10 +55,10 @@ void removeConnector(const ConnectorPtr& connector)
 
 TcpClient::TcpClient(EventLoop* loop,
                      const InetAddress& serverAddr,
-                     const string& nameArg)
+                     const string& name)
   : loop_(CHECK_NOTNULL(loop)),
     connector_(new Connector(loop, serverAddr)),
-    name_(nameArg),
+    name_(name),
     connectionCallback_(defaultConnectionCallback),
     messageCallback_(defaultMessageCallback),
     retry_(false),

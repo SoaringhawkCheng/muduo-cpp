@@ -30,7 +30,7 @@ class InetAddress;
 /// Wrapper of socket file descriptor.
 ///
 /// It closes the sockfd when desctructs.
-/// It's thread safe, all operations are delegated to OS.
+/// It's thread safe, all operations are delagated to OS.
 class Socket : boost::noncopyable
 {
  public:

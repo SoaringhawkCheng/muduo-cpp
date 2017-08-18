@@ -40,8 +40,8 @@ class PollPoller : public Poller
   void fillActiveChannels(int numEvents,
                           ChannelList* activeChannels) const;
 
-  typedef std::vector<struct pollfd> PollFdList;//pollfd指定感兴趣的文件描述符上发生的可读，可写和异常等事件
-  PollFdList pollfds_;//监听列表
+  typedef std::vector<struct pollfd> PollFdList;
+  PollFdList pollfds_; // poll数组，用于存放底层需要监听的fd
 };
 
 }

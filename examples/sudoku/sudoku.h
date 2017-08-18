@@ -7,6 +7,5 @@
 
 muduo::string solveSudoku(const muduo::StringPiece& puzzle);
 const int kCells = 81;
-extern const char kNoSolution[];
 
 #endif

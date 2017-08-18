@@ -93,7 +93,7 @@ int main(int argc, char* argv[])
 #ifdef SO_REUSEPORT
   LOG_WARN << "SO_REUSEPORT";
   EventLoop loop;
-  EventLoopThreadPool threadPool(&loop, "shorturl");
+  EventLoopThreadPool threadPool(&loop);
   if (numThreads > 1)
   {
     threadPool.setThreadNum(numThreads);

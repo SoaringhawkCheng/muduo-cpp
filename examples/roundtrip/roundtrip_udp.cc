@@ -13,6 +13,30 @@
 using namespace muduo;
 using namespace muduo::net;
 
+/*
+
+本地测试结果如下：
+20150223 09:17:03.888443Z 10384 INFO  round trip 95 clock error 22 - roundtrip_udp.cc:93
+20150223 09:17:04.088537Z 10384 INFO  round trip 72 clock error 10 - roundtrip_udp.cc:93
+20150223 09:17:04.289798Z 10384 INFO  round trip 72 clock error 10 - roundtrip_udp.cc:93
+20150223 09:17:04.490973Z 10384 INFO  round trip 73 clock error 10 - roundtrip_udp.cc:93
+20150223 09:17:04.692054Z 10384 INFO  round trip 144 clock error 36 - roundtrip_udp.cc:93
+20150223 09:17:04.893189Z 10384 INFO  round trip 73 clock error 11 - roundtrip_udp.cc:93
+20150223 09:17:05.093402Z 10384 INFO  round trip 76 clock error 11 - roundtrip_udp.cc:93
+20150223 09:17:05.293665Z 10384 INFO  round trip 108 clock error 30 - roundtrip_udp.cc:93
+20150223 09:17:05.494841Z 10384 INFO  round trip 114 clock error 21 - roundtrip_udp.cc:93
+20150223 09:17:05.694978Z 10384 INFO  round trip 70 clock error 10 - roundtrip_udp.cc:93
+20150223 09:17:05.896129Z 10384 INFO  round trip 73 clock error 10 - roundtrip_udp.cc:93
+20150223 09:17:06.097480Z 10384 INFO  round trip 73 clock error 11 - roundtrip_udp.cc:93
+20150223 09:17:06.298132Z 10384 INFO  round trip 71 clock error 11 - roundtrip_udp.cc:93
+20150223 09:17:06.498334Z 10384 INFO  round trip 71 clock error 10 - roundtrip_udp.cc:93
+20150223 09:17:06.698734Z 10384 INFO  round trip 170 clock error 16 - roundtrip_udp.cc:93
+
+RTT波动较大，clock err稳定在93上
+
+*/
+
+
 const size_t frameLen = 2*sizeof(int64_t);
 
 int createNonblockingUDP()
@@ -33,10 +57,11 @@ void serverReadCallback(int sockfd, muduo::Timestamp receiveTime)
   struct sockaddr peerAddr;
   bzero(&peerAddr, sizeof peerAddr);
   socklen_t addrLen = sizeof peerAddr;
+  // 接收报文
   ssize_t nr = ::recvfrom(sockfd, message, sizeof message, 0, &peerAddr, &addrLen);
 
-  char addrStr[64];
-  sockets::toIpPort(addrStr, sizeof addrStr, &peerAddr);
+  char addrStr[32];
+  sockets::toIpPort(addrStr, sizeof addrStr, *reinterpret_cast<struct sockaddr_in*>(&peerAddr));
   LOG_DEBUG << "received " << nr << " bytes from " << addrStr;
 
   if (nr < 0)
@@ -46,6 +71,7 @@ void serverReadCallback(int sockfd, muduo::Timestamp receiveTime)
   else if (implicit_cast<size_t>(nr) == frameLen)
   {
     message[1] = receiveTime.microSecondsSinceEpoch();
+    // 发送当前时刻
     ssize_t nw = ::sendto(sockfd, message, sizeof message, 0, &peerAddr, addrLen);
     if (nw < 0)
     {
@@ -118,7 +144,7 @@ void runClient(const char* ip, uint16_t port)
 {
   Socket sock(createNonblockingUDP());
   InetAddress serverAddr(ip, port);
-  int ret = sockets::connect(sock.fd(), serverAddr.getSockAddr());
+  int ret = sockets::connect(sock.fd(), serverAddr.getSockAddrInet());
   if (ret < 0)
   {
     LOG_SYSFATAL << "::connect";

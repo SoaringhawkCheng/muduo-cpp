@@ -15,8 +15,9 @@ namespace muduo
 /// This class is immutable.
 /// It's recommended to pass it by value, since it's passed in register on x64.
 ///
-/// 时间戳(timestamp)指格林威治时间1970年1月1日0时到现在的总秒数
-/// 时间戳是一份能够表示一份数据在一个特定时间已经存在的完整的可验证的数据
+// 时间戳类，值语义，同时继承boost的less_than_comparable，
+// 该类根据<和==可以自动生成 > >= <= !=四个运算符
+// 时间戳传参使用pass-by-value即可
 class Timestamp : public muduo::copyable,
                   public boost::less_than_comparable<Timestamp>
 {
@@ -33,10 +34,7 @@ class Timestamp : public muduo::copyable,
   /// Constucts a Timestamp at specific time
   ///
   /// @param microSecondsSinceEpoch
-  explicit Timestamp(int64_t microSecondsSinceEpochArg)
-    : microSecondsSinceEpoch_(microSecondsSinceEpochArg)
-  {
-  }
+  explicit Timestamp(int64_t microSecondsSinceEpoch);
 
   void swap(Timestamp& that)
   {
@@ -45,39 +43,33 @@ class Timestamp : public muduo::copyable,
 
   // default copy/assignment/dtor are Okay
 
+  // 1422366082.375828
   string toString() const;
+  // 20150127 21:46:45:376742
   string toFormattedString(bool showMicroseconds = true) const;
 
+  // 该时间戳对象是否是有效的
   bool valid() const { return microSecondsSinceEpoch_ > 0; }
 
   // for internal usage.
+  // 返回精确的微秒时间戳
   int64_t microSecondsSinceEpoch() const { return microSecondsSinceEpoch_; }
+  // 返回以s为单位的普通时间戳
   time_t secondsSinceEpoch() const
   { return static_cast<time_t>(microSecondsSinceEpoch_ / kMicroSecondsPerSecond); }
 
   ///
   /// Get time of now.
   ///
-  static Timestamp now();//获得当前精确时间，1970.1.1到现在，使用gettimeofday
-  static Timestamp invalid()
-  {
-    return Timestamp();
-  }
-
-  static Timestamp fromUnixTime(time_t t)
-  {
-    return fromUnixTime(t, 0);
-  }
-
-  static Timestamp fromUnixTime(time_t t, int microseconds)
-  {
-    return Timestamp(static_cast<int64_t>(t) * kMicroSecondsPerSecond + microseconds);
-  }
+  // 获取当前时间
+  static Timestamp now();
+  // 获取一个不可用的时间戳
+  static Timestamp invalid();
 
   static const int kMicroSecondsPerSecond = 1000 * 1000;
 
  private:
-  int64_t microSecondsSinceEpoch_;
+  int64_t microSecondsSinceEpoch_;  //以微秒为单位
 };
 
 inline bool operator<(Timestamp lhs, Timestamp rhs)
@@ -97,6 +89,7 @@ inline bool operator==(Timestamp lhs, Timestamp rhs)
 /// @return (high-low) in seconds
 /// @c double has 52-bit precision, enough for one-microsecond
 /// resolution for next 100 years.
+// 返回两个时间戳的差，high为较大的时间，返回一个double，整数部分以s为单位
 inline double timeDifference(Timestamp high, Timestamp low)
 {
   int64_t diff = high.microSecondsSinceEpoch() - low.microSecondsSinceEpoch();
@@ -108,6 +101,7 @@ inline double timeDifference(Timestamp high, Timestamp low)
 ///
 /// @return timestamp+seconds as Timestamp
 ///
+// 时间戳加上秒数生成新的时间戳
 inline Timestamp addTime(Timestamp timestamp, double seconds)
 {
   int64_t delta = static_cast<int64_t>(seconds * Timestamp::kMicroSecondsPerSecond);

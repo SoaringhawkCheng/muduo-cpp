@@ -20,65 +20,60 @@ namespace muduo
 {
 namespace net
 {
-namespace sockets
-{
-const struct sockaddr* sockaddr_cast(const struct sockaddr_in6* addr);
-}
 
 ///
 /// Wrapper of sockaddr_in.
 ///
 /// This is an POD interface class.
+
+// 这个类是对socket中struct sockaddr_in做了一个简单地包装
+// 这是一个POD数据类型，具有值语义
+
 class InetAddress : public muduo::copyable
 {
  public:
   /// Constructs an endpoint with given port number.
   /// Mostly used in TcpServer listening.
-  explicit InetAddress(uint16_t port = 0, bool loopbackOnly = false, bool ipv6 = false);
+  // 根据loopbackOnly决定是采用INADDR_ANY还是INADDR_LOOPBACK
+  explicit InetAddress(uint16_t port = 0, bool loopbackOnly = false);
 
   /// Constructs an endpoint with given ip and port.
   /// @c ip should be "1.2.3.4"
-  InetAddress(StringArg ip, uint16_t port, bool ipv6 = false);
+  // 使用ip和port创造一个addr，这里的ip使用的是StringArg，这表示
+  // 他可以同时接受C风格char *和std::string两种风格的字符串
+  // 这里的ip是文字形式 例如"192.168.1.150"
+  InetAddress(StringArg ip, uint16_t port);
 
   /// Constructs an endpoint with given struct @c sockaddr_in
   /// Mostly used when accepting new connections
-  explicit InetAddress(const struct sockaddr_in& addr)
+  InetAddress(const struct sockaddr_in& addr)
     : addr_(addr)
   { }
 
-  explicit InetAddress(const struct sockaddr_in6& addr)
-    : addr6_(addr)
-  { }
-
-  sa_family_t family() const { return addr_.sin_family; }
-  //
   string toIp() const;
   string toIpPort() const;
   uint16_t toPort() const;
 
   // default copy/assignment are Okay
 
-  //ipv6地址和通用地址的转换
-  const struct sockaddr* getSockAddr() const { return sockets::sockaddr_cast(&addr6_); }
-  void setSockAddrInet6(const struct sockaddr_in6& addr6) { addr6_ = addr6; }
+  // 返回内部addr的const引用
+  const struct sockaddr_in& getSockAddrInet() const { return addr_; }
+  // 设置内部的addr
+  void setSockAddrInet(const struct sockaddr_in& addr) { addr_ = addr; }
 
-  //IP或Port从主机字节序转网络字节序
-  uint32_t ipNetEndian() const;
+  // 返回网络字节序的ip地址
+  uint32_t ipNetEndian() const { return addr_.sin_addr.s_addr; }
+  // 返回网络字节序的port
   uint16_t portNetEndian() const { return addr_.sin_port; }
 
   // resolve hostname to IP address, not changing port or sin_family
   // return true on success.
   // thread safe
-  // 根据主机名获取IP地址
   static bool resolve(StringArg hostname, InetAddress* result);
   // static std::vector<InetAddress> resolveAll(const char* hostname, uint16_t port = 0);
 
  private:
-  union//联合体
-  {
-    struct sockaddr_in addr_;//ipv4
-    struct sockaddr_in6 addr6_;//ipv6
-  };
+  struct sockaddr_in addr_;
 };
 
 }

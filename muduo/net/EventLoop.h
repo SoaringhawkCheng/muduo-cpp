@@ -13,7 +13,6 @@
 
 #include <vector>
 
-#include <boost/any.hpp>
 #include <boost/function.hpp>
 #include <boost/noncopyable.hpp>
 #include <boost/scoped_ptr.hpp>
@@ -28,16 +27,20 @@ namespace muduo
 {
 namespace net
 {
-//前向声明
-class Channel;//通道
-class Poller;//轮询器
-class TimerQueue;//定时器
+
+class Channel;
+class Poller;
+class TimerQueue;
 
 ///
 /// Reactor, at most one per thread.
 ///
 /// This is an interface class, so don't expose too much details.
-//事件循环
+
+// 这是Reactor模式的核心，每个Reactor线程内部调用一个EventLoop，
+// 内部不停的进行poll或者epoll_wait调用，然后根据fd的返回事件，
+// 调用fd对应Channel的相应回调函数
+
 class EventLoop : boost::noncopyable
 {
  public:
@@ -51,12 +54,16 @@ class EventLoop : boost::noncopyable
   ///
   /// Must be called in the same thread as creation of the object.
   ///
+  // 开始事件循环，调用该函数的Thread必须是该EventLoop所在的线程
+  // 或者说，loop函数绝对不能跨线程调用
   void loop();
 
   /// Quits loop.
   ///
   /// This is not 100% thread safe, if you call through a raw pointer,
   /// better to call through shared_ptr<EventLoop> for 100% safety.
+
+  // 这个函数可以跨线程调用
   void quit();
 
   ///
@@ -75,8 +82,6 @@ class EventLoop : boost::noncopyable
   /// Runs after finish pooling.
   /// Safe to call from other threads.
   void queueInLoop(const Functor& cb);
-
-  size_t queueSize() const;
 
 #ifdef __GXX_EXPERIMENTAL_CXX0X__
   void runInLoop(Functor&& cb);
@@ -119,9 +124,8 @@ class EventLoop : boost::noncopyable
   bool hasChannel(Channel* channel);
 
   // pid_t threadId() const { return threadId_; }
-  // one loop per thread
-  // 每个线程只能有一个事件循环
-  // 创建了事件循环对象的线程是io线程
+  // 断言并没有进行跨线程操作
+  // 这个函数可以用于一些不允许跨线程的操作，避免错误
   void assertInLoopThread()
   {
     if (!isInLoopThread())
@@ -129,20 +133,13 @@ class EventLoop : boost::noncopyable
       abortNotInLoopThread();
     }
   }
-  // 当前线程是创建事件循环对象的线程
+
+  // EventLoop在构造时，会记录线程pid，所以对于该pid与当前线程id
+  // 就可以判断是否在跨线程操作
   bool isInLoopThread() const { return threadId_ == CurrentThread::tid(); }
   // bool callingPendingFunctors() const { return callingPendingFunctors_; }
   bool eventHandling() const { return eventHandling_; }
 
-  void setContext(const boost::any& context)
-  { context_ = context; }
-
-  const boost::any& getContext() const
-  { return context_; }
-
-  boost::any* getMutableContext()
-  { return &context_; }
-  // 返回当前io线程，如果当前线程不是io线程，返回NULL
   static EventLoop* getEventLoopOfCurrentThread();
 
  private:
@@ -154,26 +151,22 @@ class EventLoop : boost::noncopyable
 
   typedef std::vector<Channel*> ChannelList;
 
-  bool looping_; /* atomic *///正在轮询
+  bool looping_; /* atomic */
   bool quit_; /* atomic and shared between threads, okay on x86, I guess. */
-  bool eventHandling_; /* atomic *///正在处理事件
+  bool eventHandling_; /* atomic */
   bool callingPendingFunctors_; /* atomic */
-  int64_t iteration_;//轮询器轮询次数
-  const pid_t threadId_;//本事件循环对象所在进程
-  Timestamp pollReturnTime_;//保存最近一次轮询监听返回的时间
-  boost::scoped_ptr<Poller> poller_;//持有Poller指针，包含间接成员Poller
+  int64_t iteration_;
+  const pid_t threadId_;
+  Timestamp pollReturnTime_;
+  boost::scoped_ptr<Poller> poller_;
   boost::scoped_ptr<TimerQueue> timerQueue_;
   int wakeupFd_;
   // unlike in TimerQueue, which is an internal class,
   // we don't expose Channel to client.
   boost::scoped_ptr<Channel> wakeupChannel_;
-  boost::any context_;
-
-  // scratch variables
   ChannelList activeChannels_;
   Channel* currentActiveChannel_;
-
-  mutable MutexLock mutex_;
+  MutexLock mutex_;
   std::vector<Functor> pendingFunctors_; // @GuardedBy mutex_
 };
 

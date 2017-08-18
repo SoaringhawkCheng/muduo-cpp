@@ -3,27 +3,37 @@
 #include <sys/time.h>
 #include <stdio.h>
 
+//这里这样做是为了保证int64_t的跨平台性
 #ifndef __STDC_FORMAT_MACROS
 #define __STDC_FORMAT_MACROS
 #endif
 
-#include <inttypes.h>
+#include <inttypes.h> // int64_t
 
 #include <boost/static_assert.hpp>
 
 using namespace muduo;
 
+// 使用了boost的静态断言
 BOOST_STATIC_ASSERT(sizeof(Timestamp) == sizeof(int64_t));
 
+Timestamp::Timestamp(int64_t microseconds)
+  : microSecondsSinceEpoch_(microseconds)
+{
+}
+
+// 格式化为1422366082.375828 类型的double数字符串
 string Timestamp::toString() const
 {
   char buf[32] = {0};
   int64_t seconds = microSecondsSinceEpoch_ / kMicroSecondsPerSecond;
   int64_t microseconds = microSecondsSinceEpoch_ % kMicroSecondsPerSecond;
+  // int64_t的格式化输出要注意跨平台 int64_t在32bit中是lld，在64bit中是ld
   snprintf(buf, sizeof(buf)-1, "%" PRId64 ".%06" PRId64 "", seconds, microseconds);
   return buf;
 }
 
+// 格式化为：19940321 14:23:51:236543 可以根据参数设置是否显示微秒
 string Timestamp::toFormattedString(bool showMicroseconds) const
 {
   char buf[32] = {0};
@@ -48,11 +58,19 @@ string Timestamp::toFormattedString(bool showMicroseconds) const
   return buf;
 }
 
+// 返回一个时间戳，表示当前时刻
 Timestamp Timestamp::now()
 {
   struct timeval tv;
+  // gettimeofday可以获取微秒的精度
   gettimeofday(&tv, NULL);
   int64_t seconds = tv.tv_sec;
   return Timestamp(seconds * kMicroSecondsPerSecond + tv.tv_usec);
+}
+
+// 返回一个无效时间戳，默认为0
+Timestamp Timestamp::invalid()
+{
+  return Timestamp();
 }
 

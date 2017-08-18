@@ -27,7 +27,7 @@ namespace
 
 typedef struct sockaddr SA;
 
-
+// 为fd设置O_NONBLOCK和FD_CLOEXEC标志位，分别表示非阻塞和exec时关闭
 #if VALGRIND || defined (NO_ACCEPT4)
 void setNonBlockAndCloseOnExec(int sockfd)
 {
@@ -43,25 +43,21 @@ void setNonBlockAndCloseOnExec(int sockfd)
   ret = ::fcntl(sockfd, F_SETFD, flags);
   // FIXME check
 
-  (void)ret;
+  (void)ret; // 消除编译时警告
 }
 #endif
 
 }
 
-const struct sockaddr* sockets::sockaddr_cast(const struct sockaddr_in6* addr)
-{
-  return static_cast<const struct sockaddr*>(implicit_cast<const void*>(addr));
-}
-
-struct sockaddr* sockets::sockaddr_cast(struct sockaddr_in6* addr)
-{
-  return static_cast<struct sockaddr*>(implicit_cast<void*>(addr));
-}
-
+// 下面四个函数提供SA和SAI的相互转换
 const struct sockaddr* sockets::sockaddr_cast(const struct sockaddr_in* addr)
 {
   return static_cast<const struct sockaddr*>(implicit_cast<const void*>(addr));
+}
+
+struct sockaddr* sockets::sockaddr_cast(struct sockaddr_in* addr)
+{
+  return static_cast<struct sockaddr*>(implicit_cast<void*>(addr));
 }
 
 const struct sockaddr_in* sockets::sockaddr_in_cast(const struct sockaddr* addr)
@@ -69,23 +65,26 @@ const struct sockaddr_in* sockets::sockaddr_in_cast(const struct sockaddr* addr)
   return static_cast<const struct sockaddr_in*>(implicit_cast<const void*>(addr));
 }
 
-const struct sockaddr_in6* sockets::sockaddr_in6_cast(const struct sockaddr* addr)
+struct sockaddr_in* sockets::sockaddr_in_cast(struct sockaddr* addr)
 {
-  return static_cast<const struct sockaddr_in6*>(implicit_cast<const void*>(addr));
+  return static_cast<struct sockaddr_in*>(implicit_cast<void*>(addr));
 }
 
-int sockets::createNonblockingOrDie(sa_family_t family)
+// 创建一个监听非阻塞套接字
+int sockets::createNonblockingOrDie()
 {
 #if VALGRIND
-  int sockfd = ::socket(family, SOCK_STREAM, IPPROTO_TCP);
+  int sockfd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (sockfd < 0)
   {
     LOG_SYSFATAL << "sockets::createNonblockingOrDie";
   }
 
+  // 设置为非阻塞
   setNonBlockAndCloseOnExec(sockfd);
 #else
-  int sockfd = ::socket(family, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
+  // 直接在创建时指定非阻塞和exec关闭选项
+  int sockfd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
   if (sockfd < 0)
   {
     LOG_SYSFATAL << "sockets::createNonblockingOrDie";
@@ -94,15 +93,17 @@ int sockets::createNonblockingOrDie(sa_family_t family)
   return sockfd;
 }
 
-void sockets::bindOrDie(int sockfd, const struct sockaddr* addr)
+// 绑定网卡和端口
+void sockets::bindOrDie(int sockfd, const struct sockaddr_in& addr)
 {
-  int ret = ::bind(sockfd, addr, static_cast<socklen_t>(sizeof(struct sockaddr_in6)));
+  int ret = ::bind(sockfd, sockaddr_cast(&addr), static_cast<socklen_t>(sizeof addr));
   if (ret < 0)
   {
     LOG_SYSFATAL << "sockets::bindOrDie";
   }
 }
 
+// 监听端口
 void sockets::listenOrDie(int sockfd)
 {
   int ret = ::listen(sockfd, SOMAXCONN);
@@ -112,13 +113,15 @@ void sockets::listenOrDie(int sockfd)
   }
 }
 
-int sockets::accept(int sockfd, struct sockaddr_in6* addr)
+// 接受一个TCP连接
+int sockets::accept(int sockfd, struct sockaddr_in* addr)
 {
   socklen_t addrlen = static_cast<socklen_t>(sizeof *addr);
 #if VALGRIND || defined (NO_ACCEPT4)
   int connfd = ::accept(sockfd, sockaddr_cast(addr), &addrlen);
   setNonBlockAndCloseOnExec(connfd);
 #else
+  // 如果内核较新，可以直接使用accept4创建一个非阻塞套接字
   int connfd = ::accept4(sockfd, sockaddr_cast(addr),
                          &addrlen, SOCK_NONBLOCK | SOCK_CLOEXEC);
 #endif
@@ -156,9 +159,10 @@ int sockets::accept(int sockfd, struct sockaddr_in6* addr)
   return connfd;
 }
 
-int sockets::connect(int sockfd, const struct sockaddr* addr)
+// connect到服务器
+int sockets::connect(int sockfd, const struct sockaddr_in& addr)
 {
-  return ::connect(sockfd, addr, static_cast<socklen_t>(sizeof(struct sockaddr_in6)));
+  return ::connect(sockfd, sockaddr_cast(&addr), static_cast<socklen_t>(sizeof addr));
 }
 
 ssize_t sockets::read(int sockfd, void *buf, size_t count)
@@ -176,6 +180,7 @@ ssize_t sockets::write(int sockfd, const void *buf, size_t count)
   return ::write(sockfd, buf, count);
 }
 
+// 关闭套接字
 void sockets::close(int sockfd)
 {
   if (::close(sockfd) < 0)
@@ -184,6 +189,7 @@ void sockets::close(int sockfd)
   }
 }
 
+// 相对于close，仅仅关闭写端
 void sockets::shutdownWrite(int sockfd)
 {
   if (::shutdown(sockfd, SHUT_WR) < 0)
@@ -193,31 +199,21 @@ void sockets::shutdownWrite(int sockfd)
 }
 
 void sockets::toIpPort(char* buf, size_t size,
-                       const struct sockaddr* addr)
+                       const struct sockaddr_in& addr)
 {
-  toIp(buf,size, addr);
+  assert(size >= INET_ADDRSTRLEN);
+  ::inet_ntop(AF_INET, &addr.sin_addr, buf, static_cast<socklen_t>(size));
   size_t end = ::strlen(buf);
-  const struct sockaddr_in* addr4 = sockaddr_in_cast(addr);
-  uint16_t port = sockets::networkToHost16(addr4->sin_port);
+  uint16_t port = sockets::networkToHost16(addr.sin_port);
   assert(size > end);
   snprintf(buf+end, size-end, ":%u", port);
 }
 
 void sockets::toIp(char* buf, size_t size,
-                   const struct sockaddr* addr)
+                   const struct sockaddr_in& addr)
 {
-  if (addr->sa_family == AF_INET)
-  {
-    assert(size >= INET_ADDRSTRLEN);
-    const struct sockaddr_in* addr4 = sockaddr_in_cast(addr);
-    ::inet_ntop(AF_INET, &addr4->sin_addr, buf, static_cast<socklen_t>(size));
-  }
-  else if (addr->sa_family == AF_INET6)
-  {
-    assert(size >= INET6_ADDRSTRLEN);
-    const struct sockaddr_in6* addr6 = sockaddr_in6_cast(addr);
-    ::inet_ntop(AF_INET6, &addr6->sin6_addr, buf, static_cast<socklen_t>(size));
-  }
+  assert(size >= INET_ADDRSTRLEN);
+  ::inet_ntop(AF_INET, &addr.sin_addr, buf, static_cast<socklen_t>(size));
 }
 
 void sockets::fromIpPort(const char* ip, uint16_t port,
@@ -231,17 +227,7 @@ void sockets::fromIpPort(const char* ip, uint16_t port,
   }
 }
 
-void sockets::fromIpPort(const char* ip, uint16_t port,
-                         struct sockaddr_in6* addr)
-{
-  addr->sin6_family = AF_INET6;
-  addr->sin6_port = hostToNetwork16(port);
-  if (::inet_pton(AF_INET6, ip, &addr->sin6_addr) <= 0)
-  {
-    LOG_SYSERR << "sockets::fromIpPort";
-  }
-}
-
+// 获取套接字错误
 int sockets::getSocketError(int sockfd)
 {
   int optval;
@@ -257,9 +243,10 @@ int sockets::getSocketError(int sockfd)
   }
 }
 
-struct sockaddr_in6 sockets::getLocalAddr(int sockfd)
+// 获取TCP连接中本地的addr
+struct sockaddr_in sockets::getLocalAddr(int sockfd)
 {
-  struct sockaddr_in6 localaddr;
+  struct sockaddr_in localaddr;
   bzero(&localaddr, sizeof localaddr);
   socklen_t addrlen = static_cast<socklen_t>(sizeof localaddr);
   if (::getsockname(sockfd, sockaddr_cast(&localaddr), &addrlen) < 0)
@@ -269,9 +256,10 @@ struct sockaddr_in6 sockets::getLocalAddr(int sockfd)
   return localaddr;
 }
 
-struct sockaddr_in6 sockets::getPeerAddr(int sockfd)
+// 获取tcp连接中对方的addr
+struct sockaddr_in sockets::getPeerAddr(int sockfd)
 {
-  struct sockaddr_in6 peeraddr;
+  struct sockaddr_in peeraddr;
   bzero(&peeraddr, sizeof peeraddr);
   socklen_t addrlen = static_cast<socklen_t>(sizeof peeraddr);
   if (::getpeername(sockfd, sockaddr_cast(&peeraddr), &addrlen) < 0)
@@ -281,28 +269,13 @@ struct sockaddr_in6 sockets::getPeerAddr(int sockfd)
   return peeraddr;
 }
 
-#if !(__GNUC_PREREQ (4,6))
-#pragma GCC diagnostic ignored "-Wstrict-aliasing"
-#endif
+// 判断是否是TCP自连接，判断的依据就是tcp双方ip相同、端口也相同
+// TCP自连接可以参考http://xiaorui.cc/2015/01/02/%E5%A4%A7%E5%B9%B6%E5%8F%91%E4%B8%8Bsocket%E9%80%9A%E4%BF%A1%E8%BF%9E%E6%8E%A5%E6%97%B6%E4%BC%9A%E5%AF%BC%E8%87%B4tcp%E8%87%AA%E8%BF%9E%E6%8E%A5/
 bool sockets::isSelfConnect(int sockfd)
 {
-  struct sockaddr_in6 localaddr = getLocalAddr(sockfd);
-  struct sockaddr_in6 peeraddr = getPeerAddr(sockfd);
-  if (localaddr.sin6_family == AF_INET)
-  {
-    const struct sockaddr_in* laddr4 = reinterpret_cast<struct sockaddr_in*>(&localaddr);
-    const struct sockaddr_in* raddr4 = reinterpret_cast<struct sockaddr_in*>(&peeraddr);
-    return laddr4->sin_port == raddr4->sin_port
-        && laddr4->sin_addr.s_addr == raddr4->sin_addr.s_addr;
-  }
-  else if (localaddr.sin6_family == AF_INET6)
-  {
-    return localaddr.sin6_port == peeraddr.sin6_port
-        && memcmp(&localaddr.sin6_addr, &peeraddr.sin6_addr, sizeof localaddr.sin6_addr) == 0;
-  }
-  else
-  {
-    return false;
-  }
+  struct sockaddr_in localaddr = getLocalAddr(sockfd);
+  struct sockaddr_in peeraddr = getPeerAddr(sockfd);
+  return localaddr.sin_port == peeraddr.sin_port
+      && localaddr.sin_addr.s_addr == peeraddr.sin_addr.s_addr;
 }
 

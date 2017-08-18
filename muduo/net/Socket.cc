@@ -60,7 +60,7 @@ bool Socket::getTcpInfoString(char* buf, int len) const
 
 void Socket::bindAddress(const InetAddress& addr)
 {
-  sockets::bindOrDie(sockfd_, addr.getSockAddr());
+  sockets::bindOrDie(sockfd_, addr.getSockAddrInet());
 }
 
 void Socket::listen()
@@ -70,12 +70,12 @@ void Socket::listen()
 
 int Socket::accept(InetAddress* peeraddr)
 {
-  struct sockaddr_in6 addr;
+  struct sockaddr_in addr;
   bzero(&addr, sizeof addr);
   int connfd = sockets::accept(sockfd_, &addr);
   if (connfd >= 0)
   {
-    peeraddr->setSockAddrInet6(addr);
+    peeraddr->setSockAddrInet(addr);
   }
   return connfd;
 }
@@ -107,7 +107,7 @@ void Socket::setReusePort(bool on)
   int optval = on ? 1 : 0;
   int ret = ::setsockopt(sockfd_, SOL_SOCKET, SO_REUSEPORT,
                          &optval, static_cast<socklen_t>(sizeof optval));
-  if (ret < 0 && on)
+  if (ret < 0)
   {
     LOG_SYSERR << "SO_REUSEPORT failed.";
   }

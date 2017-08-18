@@ -13,11 +13,11 @@
 
 using namespace muduo;
 
-ThreadPool::ThreadPool(const string& nameArg)
+ThreadPool::ThreadPool(const string& name)
   : mutex_(),
     notEmpty_(mutex_),
     notFull_(mutex_),
-    name_(nameArg),
+    name_(name),
     maxQueueSize_(0),
     running_(false)
 {
@@ -60,12 +60,6 @@ void ThreadPool::stop()
   for_each(threads_.begin(),
            threads_.end(),
            boost::bind(&muduo::Thread::join, _1));
-}
-
-size_t ThreadPool::queueSize() const
-{
-  MutexLockGuard lock(mutex_);
-  return queue_.size();
 }
 
 void ThreadPool::run(const Task& task)

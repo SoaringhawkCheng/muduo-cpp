@@ -131,8 +131,7 @@ void Inspector::onRequest(const HttpRequest& req, HttpResponse* resp)
         result += helpListI->first;
         result += "/";
         result += it->first;
-        size_t len = helpListI->first.size() + it->first.size();
-        result += string(len >= 25 ? 1 : 25 - len, ' ');
+        result += "\t";
         result += it->second;
         result += "\n";
       }

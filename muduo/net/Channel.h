@@ -31,20 +31,29 @@ class EventLoop;
 /// This class doesn't own the file descriptor.
 /// The file descriptor could be a socket,
 /// an eventfd, a timerfd, or a signalfd
+
+// Channel对应一个文件描述符fd
+// Channel封装了一系列该fd对应的操作，使用回调函数的手法，
+// 包括可读、可写、关闭和错误处理四个回调函数
+// fd一般是tcp连接，也可以是其他，例如timerfd，甚至是文件fd
+
+// Channel的生命周期并不属于持有它的EventLoop，也不属于Poller，
+// 而是属于它的上一层，一般是TcpConnection、Accepor、Connector等，
+// 以及自己定义的class（内部持有一个Channel，一般是作为成员变量）
+
 class Channel : boost::noncopyable
 {
  public:
-  //boost::function是一个函数包装器，也即一个函数模板
-  //用来代替拥有相同返回类型，相同参数类型，以及相同参数个数的各个不同函数
-  //功能上类似函数指针，貌似默认模式化为NULL
-  typedef boost::function<void()> EventCallback;
-  typedef boost::function<void(Timestamp)> ReadEventCallback;
+  typedef boost::function<void()> EventCallback; // 事件回调函数
+  typedef boost::function<void(Timestamp)> ReadEventCallback; // 读操作回调函数，需要传入时间
 
   Channel(EventLoop* loop, int fd);
   ~Channel();
 
+  // 处理回调事件，一般由poller通过eventLoop来调用
   void handleEvent(Timestamp receiveTime);
-  //设置回调函数
+
+  // 设置四种回调函数
   void setReadCallback(const ReadEventCallback& cb)
   { readCallback_ = cb; }
   void setWriteCallback(const EventCallback& cb)
@@ -53,6 +62,8 @@ class Channel : boost::noncopyable
   { closeCallback_ = cb; }
   void setErrorCallback(const EventCallback& cb)
   { errorCallback_ = cb; }
+
+  // 设置回调函数的C++11版本，使用了右值语义
 #ifdef __GXX_EXPERIMENTAL_CXX0X__
   void setReadCallback(ReadEventCallback&& cb)
   { readCallback_ = std::move(cb); }
@@ -68,58 +79,56 @@ class Channel : boost::noncopyable
   /// prevent the owner object being destroyed in handleEvent.
   void tie(const boost::shared_ptr<void>&);
 
-  int fd() const { return fd_; }
-  int events() const { return events_; }
-  void set_revents(int revt) { revents_ = revt; } // used by pollers
+  int fd() const { return fd_; } // 返回该Channel对应的fd
+  int events() const { return events_; } // 返回该Channel正在监听的事件
+  void set_revents(int revt) { revents_ = revt; } // 进行poll或者epoll_wait调用后，根据fd的返回事件调用此函数
   // int revents() const { return revents_; }
-  bool isNoneEvent() const { return events_ == kNoneEvent; }
+  bool isNoneEvent() const { return events_ == kNoneEvent; } // 判断Channel是否没有事件处理
 
-  //修改关注事件
-  void enableReading() { events_ |= kReadEvent; update(); }
-  void disableReading() { events_ &= ~kReadEvent; update(); }
-  void enableWriting() { events_ |= kWriteEvent; update(); }
-  void disableWriting() { events_ &= ~kWriteEvent; update(); }
-  void disableAll() { events_ = kNoneEvent; update(); }
-  //判断关注事件类型
-  bool isWriting() const { return events_ & kWriteEvent; }
-  bool isReading() const { return events_ & kReadEvent; }
+  // update主要是通过eventloop去更新epoll中fd的监听事件
+  void enableReading() { events_ |= kReadEvent; update(); }  // 开始监听读事件
+  void disableReading() { events_ &= ~kReadEvent; update(); } // 停止监听读事件
+  void enableWriting() { events_ |= kWriteEvent; update(); } // 开始监听写事件 
+  void disableWriting() { events_ &= ~kWriteEvent; update(); } // 停止监听写事件
+  void disableAll() { events_ = kNoneEvent; update(); } // 停止监听所有事件
+  bool isWriting() const { return events_ & kWriteEvent; } // Channel是否在监听写事件，
+  // 因为poller只在有数据可写时，才去监听write事件，所以该函数的实际函数是Channel是否在执行写操作
 
-  // for Poller
-  //处理通道所对应的关注事件，在关注时间列表中的下标
+  // 下面函数主要是提供给poller使用
   int index() { return index_; }
   void set_index(int idx) { index_ = idx; }
 
   // for debug
   string reventsToString() const;
-  string eventsToString() const;
 
   void doNotLogHup() { logHup_ = false; }
 
-  EventLoop* ownerLoop() { return loop_; }//返回所属的事件循环
-  void remove();//从事件循环中移除通道
+  // 返回持有本Channel的EventLoop指针
+  EventLoop* ownerLoop() { return loop_; }
+  // 将Channel从EventLoop中移除，其实也要从poller中停止监听该fd
+  void remove();
 
  private:
-  static string eventsToString(int fd, int ev);
+  void update(); // 通过调用loop中函数，改变本fd在epoll中监听的事件
+  void handleEventWithGuard(Timestamp receiveTime); // 在临界区代码中处理事件
 
-  void update();//在事件循环中更新该通道
-  void handleEventWithGuard(Timestamp receiveTime);
+  static const int kNoneEvent;
+  static const int kReadEvent;
+  static const int kWriteEvent;
 
-  static const int kNoneEvent;//无事件 宏状态
-  static const int kReadEvent;//读事件 宏状态
-  static const int kWriteEvent;//写事件 宏状态
-
-  EventLoop* loop_;//所属的事件循环
-  const int  fd_;//监听的描述符
-  int        events_;// 关心的io事件
-  int        revents_; // it's the received event types of epoll or poll
-  int        index_; //
+  EventLoop* loop_; // 持有该Channel的EventLoop的指针
+  const int  fd_; // Channel对应的fd
+  int        events_; // 该fd正在监听的事件
+  int        revents_; // poll调用后，该fd需要处理的事件，依据它，poller调用它相应的回调函数
+  int        index_; // used by Poller.
   bool       logHup_;
 
   boost::weak_ptr<void> tie_;
   bool tied_;
-  bool eventHandling_;
-  bool addedToLoop_;//该通道是否加入到事件循环中
-  //一系列回调函数
+  bool eventHandling_; // 是否正在处理事件
+  bool addedToLoop_;
+
+  // 四种回调函数，使用的是boost提供的function模板
   ReadEventCallback readCallback_;
   EventCallback writeCallback_;
   EventCallback closeCallback_;
